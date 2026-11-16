@@ -4,11 +4,28 @@
     "slug": "AppSmartBag",
     "version": "1.0.0",
     "orientation": "portrait",
-    "plugins": [["expo-camera", {"cameraPermission": "Allow AppSmartBag to preview pose alignment using the phone camera.", "microphonePermission": false, "recordAudioAndroid": false}]],
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "expo-status-bar"
+    ],
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "AppSmartBag connects to the Raspberry Pi camera on your local network to guide face setup.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSAllowsArbitraryLoadsInWebContent": true
+        }
+      }
     },
     "android": {
       "adaptiveIcon": {

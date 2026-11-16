@@ -31,6 +31,24 @@ async function request(path, method = 'GET') {
 export const getStatus = () => request('/info');
 export const getFollowInfo = () => request('/info');
 export const startFaceRegistration = () => request('/register');
+export async function getFollowThumbSource(index, version) {
+  const { ip, token } = await getConfig();
+  const host = String(ip || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '');
+  if (!host) throw new Error('networkFailure');
+  return {
+    uri: `http://${host}:5000/thumb/${index}?v=${encodeURIComponent(version)}`,
+    headers: token ? { 'X-Token': token } : {},
+  };
+}
+export async function getFollowSnapshotSource() {
+  const { ip, token } = await getConfig();
+  const host = String(ip || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '');
+  if (!host) throw new Error('networkFailure');
+  return {
+    uri: `http://${host}:5000/snapshot`,
+    headers: token ? { 'X-Token': token } : {},
+  };
+}
 export const unlockBag = () => request('/unlock', 'POST');
 export const lockBag = () => request('/lock', 'POST');
 // ---- الميزان ----

@@ -22,7 +22,12 @@ export default function SettingsScreen() {
   const test = async () => {
     setTesting(true);
     try { await saveConfig({ ip: ip.trim(), token }); await getStatus(); Alert.alert(t('connection'), t('connectionSuccess')); }
-    catch (error) { Alert.alert(t('connectionFailed'), t(error.message)); }
+    catch (error) {
+      const detail = error.message === 'timeout'
+        ? `${t('timeout')}\n\n${t('connectionTimeoutHelp', { ip: ip.trim() || '—' })}`
+        : t(error.message);
+      Alert.alert(t('connectionFailed'), detail);
+    }
     finally { setTesting(false); }
   };
   const languageOption = (code, label) => <Pressable onPress={() => setLanguage(code)} style={[s.languageOption, language === code && s.selectedLanguage]}>
