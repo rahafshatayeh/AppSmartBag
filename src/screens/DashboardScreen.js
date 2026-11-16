@@ -1,17 +1,18 @@
-import { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Alert, Pressable } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Pressable } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import PrimaryButton from '../components/PrimaryButton';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
-import { getStatus, lockBag, unlockBag } from '../services/api';
-import { addLog, getLogs } from '../services/logStore';
+import { getStatus } from '../services/api';
+import { getLogs } from '../services/logStore';
 import { colors } from '../theme';
 
-const Metric = ({ icon, label, value, tint, isRTL }) => <View style={[s.metric, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
-  <View style={[s.metricIcon, { backgroundColor: tint }]}><Ionicons name={icon} size={20} color={colors.primary} /></View>
-  <Text style={s.metricValue}>{value}</Text><Text style={[s.metricLabel, { textAlign: isRTL ? 'right' : 'left' }]}>{label}</Text>
+const Metric = ({ icon, label, value, tint, isRTL, danger, note, progress }) => <View style={[s.metric, danger && s.metricDanger, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
+  <View style={[s.metricIcon, { backgroundColor: danger ? colors.softRed : tint }]}><Ionicons name={danger ? 'warning' : icon} size={20} color={danger ? colors.danger : colors.primary} /></View>
+  <Text style={[s.metricValue, danger && { color: colors.danger }]}>{value}</Text><Text style={[s.metricLabel, { textAlign: isRTL ? 'right' : 'left' }]}>{label}</Text>
+  {progress != null && <View style={s.metricBarBg}><View style={[s.metricBarFill, { width: `${Math.round(progress * 100)}%`, backgroundColor: danger ? colors.danger : progress > 0.85 ? colors.accent : colors.success }]} /></View>}
+  {!!note && <Text style={[s.metricNote, { textAlign: isRTL ? 'right' : 'left', color: danger ? colors.danger : colors.muted, fontWeight: danger ? '800' : '600' }]}>{note}</Text>}
 </View>;
 
 export default function DashboardScreen({ navigation }) {
@@ -19,25 +20,38 @@ export default function DashboardScreen({ navigation }) {
   const { t, isRTL } = useLanguage();
   const [status, setStatus] = useState(null);
   const [online, setOnline] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [recent, setRecent] = useState(null);
+  const polling = useRef(false);
   const load = useCallback(async () => {
     try { setStatus(await getStatus()); setOnline(true); } catch { setOnline(false); }
     try { setRecent((await getLogs())[0] || null); } catch { setRecent(null); }
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  // تحديث الحالة (والوزن) تلقائياً كل 3 ثواني وإنت على الشاشة الرئيسية
+  const refreshStatus = useCallback(async () => {
+    if (polling.current) return;
+    polling.current = true;
+    try { setStatus(await getStatus()); setOnline(true); } catch { setOnline(false); }
+    finally { polling.current = false; }
+  }, []);
+  useFocusEffect(useCallback(() => {
+    load();
+    const id = setInterval(refreshStatus, 3000);
+    return () => clearInterval(id);
+  }, [load, refreshStatus]));
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
-  const act = async (fn, label) => {
-    setBusy(true);
-    try { const data = await fn(); setStatus((previous) => ({ ...previous, ...data })); setOnline(true); await addLog(label, user?.name); setRecent((await getLogs())[0] || null); }
-    catch (error) { setOnline(false); Alert.alert(t('connectionFailed'), t(error.message)); }
-    finally { setBusy(false); }
-  };
   const locked = status?.locked;
   const known = typeof locked === 'boolean';
   const show = (value, suffix = '') => value === null || value === undefined ? '—' : `${value}${suffix}`;
   const align = { textAlign: isRTL ? 'right' : 'left' };
+  const wi = status?.weight_info;
+  const rawKg = status?.weight ?? wi?.kg;
+  const kg = Number.isFinite(rawKg) ? rawKg : null;
+  const limit = Number.isFinite(wi?.limit) && wi.limit > 0 ? wi.limit : null;
+  const over = wi?.over === true || (kg != null && limit != null && kg > limit);
+  const diff = over && kg != null && limit != null ? Math.max(0, kg - limit) : 0;
+  const weightProgress = kg != null && limit != null ? Math.min(1, kg / limit) : null;
+  const weightNote = over ? t('overBy', { diff: diff.toFixed(2), limit }) : (limit != null ? t('weightLimitIs', { limit }) : '');
 
   return <ScrollView style={s.screen} contentContainerStyle={s.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
     <View style={[s.greetingRow, !isRTL && s.rowLtr]}>
@@ -57,15 +71,18 @@ export default function DashboardScreen({ navigation }) {
       </View>
       <View style={s.divider} /><Text style={[s.statusHint, align]}>{known ? (locked ? t('contentsSafe') : t('lockReminder')) : t('pullToRefresh')}</Text>
     </View>
-    <Text style={[s.sectionTitle, align]}>{t('quickControl')}</Text>
-    <View style={[s.actionRow, !isRTL && s.rowLtr]}>
-      <PrimaryButton title={t('openBag')} color={colors.danger} style={s.actionButton} loading={busy} disabled={known && !locked} onPress={() => act(unlockBag, t('openBag'))} />
-      <PrimaryButton title={t('lockBag')} color={colors.primary} style={s.actionButton} loading={busy} disabled={known && locked} onPress={() => act(lockBag, t('lockBag'))} />
-    </View>
+    {over && <Pressable style={[s.overBanner, !isRTL && s.rowLtr]} onPress={() => navigation.navigate('Weight')}>
+      <Ionicons name="warning" size={26} color="#fff" />
+      <View style={[s.overCopy, { alignItems: isRTL ? 'flex-end' : 'flex-start' }]}>
+        <Text style={[s.overTitle, align]}>{t('overBanner')}</Text>
+        <Text style={[s.overBody, align]}>{t('overBy', { diff: diff.toFixed(2), limit })}</Text>
+      </View>
+      <Ionicons name={isRTL ? 'chevron-back' : 'chevron-forward'} size={18} color="#fff" />
+    </Pressable>}
     <Text style={[s.sectionTitle, align]}>{t('bagInfo')}</Text>
     <View style={[s.metricsRow, !isRTL && s.rowLtr]}>
       <Metric icon="battery-half" label={t('battery')} value={show(status?.battery, '%')} tint={colors.softGreen} isRTL={isRTL} />
-      <Metric icon="barbell" label={t('weight')} value={show(status?.weight, isRTL ? ' \u0643\u063a' : ' kg')} tint={colors.softGold} isRTL={isRTL} />
+      <Metric icon="barbell" label={t('weight')} value={show(kg, isRTL ? ' \u0643\u063a' : ' kg')} tint={colors.softGold} isRTL={isRTL} danger={over} note={weightNote} progress={weightProgress} />
     </View>
     <Pressable style={[s.recentCard, !isRTL && s.rowLtr]} onPress={() => navigation.navigate('Log')}>
       <View style={s.recentIcon}><Ionicons name="time-outline" size={20} color={colors.primary} /></View>
@@ -90,4 +107,7 @@ const s = StyleSheet.create({
   actionRow: { flexDirection: 'row', gap: 10, marginBottom: 24 }, actionButton: { flex: 1, marginTop: 0, minHeight: 50 }, metricsRow: { flexDirection: 'row', gap: 12, marginBottom: 18 },
   metric: { flex: 1, backgroundColor: colors.card, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: colors.border }, metricIcon: { width: 38, height: 38, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginBottom: 14 }, metricValue: { color: colors.text, fontSize: 22, fontWeight: '800', marginBottom: 3 }, metricLabel: { color: colors.muted, fontSize: 12 },
   recentCard: { flexDirection: 'row-reverse', alignItems: 'center', backgroundColor: colors.card, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: colors.border }, recentIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: colors.softGreen, alignItems: 'center', justifyContent: 'center' }, recentCopy: { flex: 1, marginHorizontal: 10 }, recentLabel: { color: colors.muted, fontSize: 11, marginBottom: 3 }, recentText: { color: colors.text, fontSize: 13, fontWeight: '700' }, hint: { color: colors.muted, textAlign: 'center', fontSize: 12, marginTop: 18 },
+  metricDanger: { borderColor: colors.danger, borderWidth: 2, backgroundColor: colors.softRed },
+  metricBarBg: { alignSelf: 'stretch', height: 6, borderRadius: 4, backgroundColor: colors.bg, marginTop: 10, overflow: 'hidden' }, metricBarFill: { height: 6, borderRadius: 4 }, metricNote: { fontSize: 11, marginTop: 6 },
+  overBanner: { flexDirection: 'row-reverse', alignItems: 'center', backgroundColor: colors.danger, borderRadius: 18, padding: 14, marginBottom: 16 }, overCopy: { flex: 1, marginHorizontal: 10 }, overTitle: { color: '#fff', fontSize: 16, fontWeight: '800' }, overBody: { color: '#fff', fontSize: 12, marginTop: 3 },
 });

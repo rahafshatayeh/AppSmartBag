@@ -15,6 +15,7 @@ export default function LiveCamera({ height = 245, style }) {
   const [next, setNext] = useState(null);      // الصورة اللي عم تتحمّل (مخفية)
   const [status, setStatus] = useState('connecting'); // connecting | live | error
   const n = useRef(0);
+  const session = useRef(Date.now());   // رقم فريد لكل فتحة للشاشة: بيمنع إعادة عرض صور قديمة من الكاش
   const fails = useRef(0);
   const timer = useRef(null);
   const alive = useRef(true);
@@ -30,7 +31,7 @@ export default function LiveCamera({ height = 245, style }) {
     timer.current = setTimeout(() => {
       if (!alive.current || !base) return;
       n.current += 1;
-      setNext({ uri: `${base}?f=${n.current}` });
+      setNext({ uri: `${base}?s=${session.current}&f=${n.current}` });
     }, delay);
   };
 
@@ -49,7 +50,7 @@ export default function LiveCamera({ height = 245, style }) {
   };
   const onError = () => {
     fails.current += 1;
-    if (fails.current >= 3) setStatus('error');
+    if (fails.current >= 3) { setStatus('error'); setShown(null); }   // ما نخلي صورة قديمة مجمّدة ظاهرة
     requestNext(Math.min(2000, 300 * fails.current));   // بيرجع يحاول لحاله
   };
 

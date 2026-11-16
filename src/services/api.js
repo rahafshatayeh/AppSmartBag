@@ -36,7 +36,7 @@ export async function getFollowThumbSource(index, version) {
   const host = String(ip || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/:\d+$/, '');
   if (!host) throw new Error('networkFailure');
   return {
-    uri: `http://${host}:5000/thumb/${index}?v=${encodeURIComponent(version)}`,
+    uri: `http://${host}:5000/thumb/${index}?v=${encodeURIComponent(version)}&s=${Date.now()}`,
     headers: token ? { 'X-Token': token } : {},
   };
 }
